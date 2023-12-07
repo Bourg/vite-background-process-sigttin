@@ -1,4 +1,4 @@
-# Vite background process termination bug reproduction
+# Vite background process stopped by SIGTTIN
 
 This repository contains a minimal reproduction for a bug in which a Vite server background process is stopped for trying to read STDIN,
 but will still take incoming connections to which it will never respond.
@@ -7,46 +7,16 @@ I'm not sure exactly what the expected behavior should be here, but the server c
 
 ## How to reproduce
 
-### Step 1: Build and run the Docker container
+This reproduction is built on a totally unmodified Vite project created with `npm create vite@latest` and selecting `Vanilla` + `JavaScript` for absolute minimal dependencies. It uses Docker since the exact way this behavior manifests depends on the exact shell implementation / TTY involved, but the same rough behavior will occur in any UNIX environment.
 
-The exact nature of the behavior depends on the exact terminal emulator and TTY configuration,
-so this repro is provided in a Dockerized format for consistency.
+1. Build and run the Docker container: `./build.sh && ./run.sh`
+2. Start a Vite server in the background: `npm run preview -- --host &`
+3. Issue any command in the foreground: e.g., `echo hello`
+4. Observe the `Stopped` message presented by Bash indicating the Vite server process group has been stopped
+5. Issue a request to the Vite server: `curl http://localhost:4173/` or via a browser on the host machine
+6. Observe that a connection is established, but Vite never responds
 
-Simply run the scripts to build the Docker image and run an interactive Docker container with bash.
-
-```sh
-./build.sh
-./run.sh
-```
-
-### Step 2: Start a Vite server in the background
-
-At this point, you should be in a bash shell inside the Docker container.
-Run the following command to start the Vite server in the background as a child process of the shell:
-
-```sh
-npm run preview -- --host &
-```
-
-This is a pattern that is common in CI pipelines that run a webserver and test it with tools like Cypress or Playwright,
-which is how I stumbled onto this behavior.
-
-### Step 3: Make a request to the server
-
-At this point, if you make a request to the server from the same terminal that started the Vite server in a background process,
-it will accept the connection but will never respond.
-
-```
-curl http://localhost:4173/ 
-```
-
-If you interrupt the `curl` with `Ctrl+c`, you will get a `Stopped` message from `bash`.
-
-If you run any command, even just `echo hello`, the Vite process will stop in the same manner
-and any requests to it will still connect, but Vite will never respond.
-This behavior holds for `curl` both inside and outside the container, as well as from browsers outside the container.
-
-Running Vite with the `--debug` flag and/or with the `DEBUG=*` environment variable produce no input at all to these hanging requests.
+This crude pattern of starting a server in the background comes up commonly in CI pipelines with tools like Cypress or Playwright.
 
 ## What is going on here?
 
